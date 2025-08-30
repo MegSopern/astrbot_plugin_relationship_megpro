@@ -1,4 +1,5 @@
 import asyncio
+
 from aiocqhttp import CQHttp
 from astrbot import logger
 from astrbot.api.event import filter
@@ -7,16 +8,16 @@ from astrbot.core.config.astrbot_config import AstrBotConfig
 from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
     AiocqhttpMessageEvent,
 )
-from astrbot.core.star.filter.permission import PermissionType
 from astrbot.core.star.filter.platform_adapter_type import PlatformAdapterType
-from .utils import convert_duration_advanced, get_reply_text, get_user_name, get_at_id
+
+from .utils import convert_duration_advanced, get_at_id, get_reply_text, get_user_name
 
 
 @register(
-    "astrbot_plugin_relationship",
+    "astrbot_plugin_relationship_megpro",
     "Zhalslar",
     "[仅aiocqhttp] 人际关系管理器",
-    "v2.0.2",
+    "v2.0.3",
     "https://github.com/Zhalslar/astrbot_plugin_relationship",
 )
 class Relationship(Star):
@@ -25,6 +26,10 @@ class Relationship(Star):
         self.config = config
         # 管理群ID，审批信息会发到此群
         self.manage_group: int = config.get("manage_group", 0)
+        # 管理员ID，为插件设置新增的局部管理员，不填默认仅继承全局管理员列表
+        self.relationship_admins_id: list[str] = config.get(
+            "relationship_admins_id", []
+        )
         # 管理员QQ号列表，审批信息会私发给这些人
         self.admins_id: list[str] = list(set(context.get_config().get("admins_id", [])))
         # 最大允许禁言时长，超过自动退群
@@ -44,12 +49,19 @@ class Relationship(Star):
         # 检查黑名单时兼容字符串和数字
         return any(str(group_id) == str(gid) for gid in self.group_blacklist)
 
-    @filter.permission_type(PermissionType.ADMIN)
+    def check_admin_permission(self, event: AiocqhttpMessageEvent) -> bool:
+        # 检查发送者是否有管理员权限
+        uid: str = event.get_sender_id()
+        return uid in self.admins_id or uid in self.relationship_admins_id
+
     @filter.command("群列表")
     async def show_groups_info(self, event: AiocqhttpMessageEvent):
         """
         管理员命令：查看机器人已加入的所有群聊信息
         """
+        if not self.check_admin_permission(event):
+            return
+
         client = event.bot
         group_list = await client.get_group_list()
         group_info = "\n\n".join(
@@ -60,12 +72,14 @@ class Relationship(Star):
         url = await self.text_to_image(info)
         yield event.image_result(url)
 
-    @filter.permission_type(PermissionType.ADMIN)
     @filter.command("好友列表")
     async def show_friends_info(self, event: AiocqhttpMessageEvent):
         """
         管理员命令：查看所有好友信息
         """
+        if not self.check_admin_permission(event):
+            return
+
         client = event.bot
         friend_list = await client.get_friend_list()
         friend_info = "\n\n".join(
@@ -76,7 +90,6 @@ class Relationship(Star):
         url = await self.text_to_image(info)
         yield event.image_result(url)
 
-    @filter.permission_type(PermissionType.ADMIN)
     @filter.command("退群")
     async def set_group_leave(
         self, event: AiocqhttpMessageEvent, group_id: int | None = None
@@ -86,6 +99,8 @@ class Relationship(Star):
         """
         if not group_id:
             yield event.plain_result("要指明退哪个群哟~")
+            return
+        if not self.check_admin_permission(event):
             return
 
         client = event.bot
@@ -99,7 +114,6 @@ class Relationship(Star):
         await client.set_group_leave(group_id=group_id)
         yield event.plain_result(f"已退出群聊：{group_id}")
 
-    @filter.permission_type(PermissionType.ADMIN)
     @filter.command("删了", alias={"删除好友"})
     async def delete_friend(
         self, event: AiocqhttpMessageEvent, input_id: int | None = None
@@ -110,6 +124,8 @@ class Relationship(Star):
         target_id: int | None = get_at_id(event) or input_id
         if not target_id:
             yield event.plain_result("请 @ 要删除的好友或提供其QQ号。")
+            return
+        if not self.check_admin_permission(event):
             return
 
         client = event.bot
@@ -188,26 +204,27 @@ class Relationship(Star):
             except Exception as e:
                 logger.error(f"无法向邀请者 {user_id} 发送提示: {e}")
 
-    @filter.permission_type(PermissionType.ADMIN)
     @filter.command("同意")
     async def agree(self, event: AiocqhttpMessageEvent, extra: str = ""):
         """
         管理员命令：同意好友申请或群邀请
         """
+        if not self.check_admin_permission(event):
+            return
         reply = await self.approve(event=event, extra=extra, approve=True)
         if reply:
             yield event.plain_result(reply)
 
-    @filter.permission_type(PermissionType.ADMIN)
     @filter.command("拒绝")
     async def refuse(self, event: AiocqhttpMessageEvent, extra: str = ""):
         """
         管理员命令：拒绝好友申请或群邀请
         """
+        if not self.check_admin_permission(event):
+            return
         reply = await self.approve(event=event, extra=extra, approve=False)
         if reply:
             yield event.plain_result(reply)
-
 
     async def approve(
         self, event: AiocqhttpMessageEvent, extra: str = "", approve: bool = True
@@ -448,7 +465,7 @@ class Relationship(Star):
         client: CQHttp,
         group_id: int | str = 0,
         user_id: int | str = 0,
-        count: int  = 20,
+        count: int = 20,
         reply_group_id: int | str = 0,
         reply_user_id: int | str = 0,
     ) -> bool:
@@ -507,7 +524,6 @@ class Relationship(Star):
                     )
         return True
 
-    @filter.permission_type(PermissionType.ADMIN)
     @filter.command("抽查")
     async def check_messages_handle(
         self,
@@ -520,6 +536,8 @@ class Relationship(Star):
         """
         if not group_id:
             yield event.plain_result("未指定群号")
+            return
+        if not self.check_admin_permission(event):
             return
         try:
             await self.check_messages(

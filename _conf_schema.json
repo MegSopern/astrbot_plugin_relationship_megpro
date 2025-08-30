@@ -4,6 +4,12 @@
         "type": "string",
         "hint": "bot收到的好友申请、群邀请在管理群里审批，不填则将审批信息私发给bot管理员"
     },
+    "relationship_admins_id": {
+        "description": "管理员",
+        "type": "list",
+        "hint": "此插件管理员，管理员可审批bot好友申请及群邀请，不填则默认仅继承全局管理员名单",
+        "default":[]
+    },
     "max_ban_duration": {
         "description": "允许的最大禁言时间",
         "type": "int",
