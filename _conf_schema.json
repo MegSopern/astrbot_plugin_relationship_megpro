@@ -7,8 +7,8 @@
     "relationship_admins_id": {
         "description": "管理员",
         "type": "list",
-        "hint": "此插件管理员，管理员可审批bot好友申请及群邀请，不填则默认仅继承全局管理员名单",
-        "default":[]
+        "hint": "此插件审批管理员，可审批bot好友申请及群邀请，不填则默认仅继承全局管理员名单",
+        "default": []
     },
     "max_ban_duration": {
         "description": "允许的最大禁言时间",

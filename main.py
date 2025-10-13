@@ -1,4 +1,6 @@
 import asyncio
+import json
+from pathlib import Path
 
 from aiocqhttp import CQHttp
 from astrbot import logger
@@ -24,11 +26,18 @@ class Relationship(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
         self.config = config
+        # 文件配置路径
+        self.relationship_megpro_config = (
+            Path(__file__).parent.parent.parent
+            / "config"
+            / "astrbot_plugin_relationship_megpro_config.json"
+        )
+
         # 管理群ID，审批信息会发到此群
         self.manage_group: int = config.get("manage_group", 0)
-        # 管理员ID，为插件设置新增的局部管理员，不填默认仅继承全局管理员列表
-        self.relationship_admins_id: list[str] = config.get(
-            "relationship_admins_id", []
+        # 管理员ID，为插件设置新增的局部审批管理员，不填默认仅继承全局管理员列表
+        self.relationship_admins_id: dict[list[str]] = (
+            self.read_relationship_megpro_config().get("relationship_admins_id", [])
         )
         # 管理员QQ号列表，审批信息会私发给这些人
         self.admins_id: list[str] = list(set(context.get_config().get("admins_id", [])))
@@ -53,6 +62,127 @@ class Relationship(Star):
         # 检查发送者是否有管理员权限
         uid: str = event.get_sender_id()
         return uid in self.admins_id or uid in self.relationship_admins_id
+
+    # 读取配置文件内容
+    def read_relationship_megpro_config(self) -> dict:
+        with open(self.relationship_megpro_config, "r", encoding="utf-8-sig") as f:
+            config_data = json.load(f)
+        return config_data
+
+    # 写入内容至配置文件
+    def write_relationship_megpro_config(self, new_data: dict):
+        with open(self.relationship_megpro_config, "w", encoding="utf-8") as f:
+            json.dump(new_data, f, ensure_ascii=False, indent=4)
+        return
+
+    # @author: MegSopern
+    # 2025-10-14 新增：添加审批管理员
+    @filter.command(
+        "加审批员",
+        alias={
+            "添审批员",
+            "添加审批员",
+            "添加审批管理员",
+            "增加审批员",
+            "增加审批管理员",
+        },
+    )
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    async def add_relationship_admin(self, event: AiocqhttpMessageEvent):
+        """增添审批管理员，超管命令：加审批员 @用户/qq号）"""
+        relationship_megpro_config = self.read_relationship_megpro_config()
+        cmd_prefix = event.message_str.split()[0]
+        input_str = event.message_str.replace(cmd_prefix, "", 1).strip()
+        target_id = None
+        to_user_ids = get_at_id(event)
+        if isinstance(to_user_ids, list) and to_user_ids:
+            target_id = to_user_ids[0]
+        else:
+            target_id = to_user_ids
+        parts = input_str.strip().split()
+        if parts and parts[0].isdigit():
+            target_id = parts[0]
+        if not target_id:
+            yield event.plain_result(
+                "请@要添加的管理员或提供其QQ号\n使用方法：加审批员 @用户/qq号"
+            )
+            return
+        if str(target_id) in relationship_megpro_config.get(
+            "relationship_admins_id", []
+        ):
+            yield event.plain_result("TA已经是bot的审批管理员了")
+            return
+        relationship_megpro_config["relationship_admins_id"].append(str(target_id))
+        self.write_relationship_megpro_config(relationship_megpro_config)
+        yield event.plain_result(
+            f"已新增审批员：\n{await get_user_name(event.bot, target_id)}（ID：{target_id}）"
+        )
+
+    # @author: MegSopern
+    # 2025-10-14 新增功能：移除审批管理员
+    @filter.command(
+        "移审批员",
+        alias={
+            "删除审批员",
+            "删除审批管理员",
+            "移审批员",
+            "移除审批员",
+            "移除审批管理员",
+        },
+    )
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    async def remove_relationship_admin(self, event: AiocqhttpMessageEvent):
+        """移除审批管理员，超管命令：移审批员 @用户/qq号"""
+        relationship_megpro_config = self.read_relationship_megpro_config()
+        cmd_prefix = event.message_str.split()[0]
+        input_str = event.message_str.replace(cmd_prefix, "", 1).strip()
+        target_id = None
+        to_user_ids = get_at_id(event)
+        if isinstance(to_user_ids, list) and to_user_ids:
+            target_id = to_user_ids[0]
+        else:
+            target_id = to_user_ids
+        parts = input_str.strip().split()
+        if parts and parts[0].isdigit():
+            target_id = parts[0]
+        if not target_id:
+            yield event.plain_result(
+                "请@要删除的管理员或提供其QQ号\n使用方法：删审批员 @用户/qq号"
+            )
+            return
+        if str(target_id) not in relationship_megpro_config.get(
+            "relationship_admins_id", []
+        ):
+            yield event.plain_result("TA不是bot的审批管理员")
+            return
+        relationship_megpro_config["relationship_admins_id"].remove(str(target_id))
+        self.write_relationship_megpro_config(relationship_megpro_config)
+        yield event.plain_result(
+            f"已移除审批员：\n{await get_user_name(event.bot, target_id)}（ID：{target_id}）"
+        )
+
+    # @author: MegSopern
+    # 2025-10-14 新增功能：获取审批管理员列表
+    @filter.command(
+        "审批员列表",
+        desc="查看当前审批管理员列表",
+        alias={"审批管理员列表", "审批员名单", "审批管理员名单", "查看审批员"},
+    )
+    async def get_relationship_admins(self, event: AiocqhttpMessageEvent):
+        if not self.check_admin_permission(event):
+            yield event.plain_result("你没有权限使用此命令")
+            return
+        relationship_admins_ids = self.read_relationship_megpro_config().get(
+            "relationship_admins_id", []
+        )
+        message = "当前审批管理员列表："
+        # 用enumerate获取序号，start=1表示从1开始计数
+        for index, admin_id in enumerate(relationship_admins_ids, start=1):
+            name = await get_user_name(event.bot, int(admin_id))
+            message += f"\n[{index}] {name}\n(ID：{admin_id})\n"
+        yield event.plain_result(
+            message if relationship_admins_ids else "未设置审批管理员，请联系超管"
+        )
 
     @filter.command("群列表")
     async def show_groups_info(self, event: AiocqhttpMessageEvent):
