@@ -35,6 +35,10 @@ class Relationship(Star):
 
         # 管理群ID，审批信息会发到此群
         self.manage_group: int = config.get("manage_group", 0)
+        # 是否启用自动审批功能
+        self.auto_reject: bool = config.get("auto_reject", False)
+        # 自动拒绝功能的依据群聊
+        self.auto_reject_group: list[int] = config.get("auto_reject_group", [])
         # 管理员ID，为插件设置新增的局部审批管理员，不填默认仅继承全局管理员列表
         self.relationship_admins_id: dict[list[str]] = (
             self.read_relationship_megpro_config().get("relationship_admins_id", [])
@@ -279,7 +283,6 @@ class Relationship(Star):
             or raw_message.get("post_type") != "request"
         ):
             return
-
         logger.info(f"收到好友申请或群邀请: {raw_message}")
         client = event.bot
         user_id: int = raw_message.get("user_id", 0)
@@ -291,9 +294,16 @@ class Relationship(Star):
 
         # 加好友事件
         if raw_message.get("request_type") == "friend":
+            # @author: MegSopern
+            # 2025-11-14 新增功能：self.auto_reject开启时，若用户不在依据群聊，自动拒绝其好友申请
+            if self.auto_reject:
+                is_reject, message = await self.auto_reject_request(
+                    event=event, flag=flag, type="friend"
+                )
+                if is_reject:
+                    return await self.send_reply(client, message)
             notice = f"【收到好友申请】同意吗：\n昵称：{nickname}\nQQ号：{user_id}\nflag：{flag}\n验证信息：{comment}"
             await self.send_reply(client, notice)
-
         # 群邀请事件
         elif (
             raw_message.get("request_type") == "group"
@@ -303,6 +313,15 @@ class Relationship(Star):
             group_name = (await client.get_group_info(group_id=group_id))[
                 "group_name"
             ] or "未知群名"
+
+            # @author: MegSopern
+            # 2025-11-14 新增功能：self.auto_reject开启时，若用户不在依据群聊，自动拒绝其群邀请
+            if self.auto_reject:
+                is_reject, message = await self.auto_reject_request(
+                    event=event, flag=flag, type="group"
+                )
+                if is_reject:
+                    return await self.send_reply(client, message)
 
             notice_to_admin = (
                 f"【收到群邀请】同意吗\n"
@@ -418,7 +437,6 @@ class Relationship(Star):
         """
         raw_message = getattr(event.message_obj, "raw_message", None)
         self_id = event.get_self_id()
-
         if (
             not raw_message
             or not isinstance(raw_message, dict)
@@ -681,3 +699,47 @@ class Relationship(Star):
         except Exception as e:
             logger.error(f"抽查群({group_id})消息失败: {e}")
             yield event.plain_result(f"抽查群({group_id})消息失败: {e}")
+
+    # @author: MegSopern
+    # 2025-11-14 新增功能：判断发起用户是否在依据群聊，若不在则自动拒绝其好友申请和群邀请
+    async def auto_reject_request(
+        self, event: AiocqhttpMessageEvent, flag: str, type: str = ""
+    ) -> tuple[bool, str]:
+        source_id = event.get_sender_id()
+        nickname: str = (await event.bot.get_stranger_info(user_id=int(source_id)))[
+            "nickname"
+        ] or "未知昵称"
+        members_data = await event.bot.get_group_member_list(
+            group_id=int(self.auto_reject_group or self.manage_group)
+        )
+        is_in_group = False
+        for member in members_data:
+            if str(member.get("user_id", "")) == str(source_id):
+                is_in_group = True
+                break
+        if not is_in_group:
+            if type == "friend":
+                try:
+                    await event.bot.set_friend_add_request(flag=flag, approve=False)
+                    return (
+                        True,
+                        f"已自动拒绝好友：{nickname}\n原因：发起者未在规定群聊中",
+                    )
+                except Exception as e:
+                    logger.error(f"无法拒绝好友申请 {nickname} : {e}")
+                    await self.send_reply(event.bot, "处理出错，无法拒绝好友申请")
+                    return False, ""
+            elif type == "group":
+                try:
+                    await event.bot.set_group_add_request(
+                        flag=flag, sub_type="invite", approve=False
+                    )
+                    return (
+                        True,
+                        f"已自动拒绝群邀请：{nickname}\n原因：发起者未在规定群聊中",
+                    )
+                except Exception as e:
+                    logger.error(f"无法拒绝群邀请 {nickname} : {e}")
+                    await self.send_reply(event.bot, "处理出错，无法拒绝群邀请")
+                    return False, ""
+        return False, ""

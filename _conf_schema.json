@@ -4,10 +4,21 @@
         "type": "string",
         "hint": "bot收到的好友申请、群邀请在管理群里审批，不填则将审批信息私发给bot管理员"
     },
+    "auto_reject": {
+        "description": "拒绝未在依据群聊的用户的申请",
+        "type": "bool",
+        "hint": "开启后，bot收到好友申请和群邀请时，若发起用户未在所设定的依据群聊中，自动拒绝其好友申请和群邀请",
+        "default": false
+    },
+    "auto_reject_group": {
+        "description": "自动拒绝功能的依据群聊",
+        "type": "string",
+        "hint": "设置自动拒绝好友申请和群邀请的依据群聊，若不填则默认使用“管理群”作为依据群聊"
+    },
     "relationship_admins_id": {
         "description": "管理员",
         "type": "list",
-        "hint": "此插件审批管理员，可审批bot好友申请及群邀请，不填则默认仅继承全局管理员名单",
+        "hint": "此插件管理员，管理员可审批bot好友申请及群邀请，不填则默认仅继承全局管理员名单",
         "default": []
     },
     "max_ban_duration": {
