@@ -17,10 +17,10 @@ from .utils import convert_duration_advanced, get_at_id, get_reply_text, get_use
 
 @register(
     "astrbot_plugin_relationship_megpro",
-    "Zhalslar",
-    "[仅aiocqhttp] 人际关系管理器",
-    "v2.0.3",
-    "https://github.com/Zhalslar/astrbot_plugin_relationship",
+    "MegSopern & Zhalslar",
+    "[仅aiocqhttp] 人际关系管理器增强版！",
+    "v2.0.5",
+    "https://github.com/MegSopern/astrbot_plugin_relationship_megpro",
 )
 class Relationship(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
