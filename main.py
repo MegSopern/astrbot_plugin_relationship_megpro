@@ -431,7 +431,7 @@ class Relationship(Star):
                 return "这条申请处理过了或者格式不对"
 
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
-    async def on_notice(self, event: AiocqhttpMessageEvent):
+    async def on_notice(self, event: AiocqhttpMessageEvent, *args, **kwargs):
         """
         监听群聊相关事件（如管理员变动、禁言、踢出、邀请等），自动处理并反馈
         """
