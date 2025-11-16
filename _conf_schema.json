@@ -27,6 +27,12 @@
             }
         }
     },
+    "temporary_dialogue_control": {
+        "description": "临时会话控制",
+        "type": "bool",
+        "hint": "开启后，用户对bot发起临时会话时，bot不会再进行llm回复",
+        "default": false
+    },
     "max_ban_duration": {
         "description": "允许的最大禁言时间",
         "type": "int",

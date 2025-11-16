@@ -4,9 +4,11 @@ from pathlib import Path
 
 from aiocqhttp import CQHttp
 from astrbot import logger
-from astrbot.api.event import filter
+from astrbot.api.event import AstrMessageEvent, filter
+from astrbot.api.provider import ProviderRequest
 from astrbot.api.star import Context, Star, register
 from astrbot.core.config.astrbot_config import AstrBotConfig
+from astrbot.core.platform.message_type import MessageType
 from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
     AiocqhttpMessageEvent,
 )
@@ -35,6 +37,10 @@ class Relationship(Star):
 
         # 管理群ID，审批信息会发到此群
         self.manage_group: int = config.get("manage_group", 0)
+        # 管理员ID，为插件设置新增的局部审批管理员，不填默认仅继承全局管理员列表
+        self.relationship_admins_id: dict[list[str]] = (
+            self.read_relationship_megpro_config().get("relationship_admins_id", [])
+        )
 
         # 自动审批
         self.auto_reject_config: dict = config.get("auto_reject_config", {})
@@ -45,10 +51,8 @@ class Relationship(Star):
             "auto_reject_group", ""
         )
 
-        # 管理员ID，为插件设置新增的局部审批管理员，不填默认仅继承全局管理员列表
-        self.relationship_admins_id: dict[list[str]] = (
-            self.read_relationship_megpro_config().get("relationship_admins_id", [])
-        )
+        # 临时会话控制开关
+        self.temp_dialog_ctrl: bool = config.get("temporary_dialogue_control", False)
         # 管理员QQ号列表，审批信息会私发给这些人
         self.admins_id: list[str] = list(set(context.get_config().get("admins_id", [])))
         # 最大允许禁言时长，超过自动退群
@@ -289,7 +293,7 @@ class Relationship(Star):
             or raw_message.get("post_type") != "request"
         ):
             return
-        logger.info(f"收到好友申请或群邀请: {raw_message}")
+        logger.debug(f"收到好友申请或群邀请: {raw_message}")
         client = event.bot
         user_id: int = raw_message.get("user_id", 0)
         nickname: str = (await client.get_stranger_info(user_id=int(user_id)))[
@@ -749,3 +753,48 @@ class Relationship(Star):
                     await self.send_reply(event.bot, "处理出错，无法拒绝群邀请")
                     return False, ""
         return False, ""
+
+    # @author: MegSopern
+    # 2025-11-17 新增功能：开启临时会话控制时，会在调用 LLM 前,拦截临时会话消息
+    @filter.on_llm_request()
+    async def intercept_tmp_sess(self, event: AstrMessageEvent, req: ProviderRequest):
+        # 判断是否为临时会话
+        if self.temp_dialog_ctrl:
+            msg_type = event.get_message_type()
+            if (
+                msg_type == MessageType.OTHER_MESSAGE
+                or msg_type == MessageType.FRIEND_MESSAGE
+            ):
+                raw_message = getattr(event.message_obj, "raw_message", None)
+                if (
+                    not isinstance(raw_message, dict)
+                    or raw_message.get("post_type") != "request"
+                ):
+                    sub_type = raw_message.get("sub_type", "")
+                    message_type_str = raw_message.get("message_type", "")
+                    if message_type_str == "private":
+                        # message_type_str为"private"，但sub_type不为"friend"，则为临时会话
+                        if sub_type and sub_type != "friend":
+                            logger.debug(
+                                f"[临时会话识别1] 检测到临时会话，sub_type: {sub_type}, 会话: {event.unified_msg_origin}"
+                            )
+                            await event.send(
+                                event.plain_result(
+                                    "想和染染玩需要成为好朋友，并经过主人的同意嗷~"
+                                )
+                            )
+                            event.stop_event()
+                            return
+                        # sub_type为空或为"friend"，则为临时会话
+                        if not sub_type or sub_type == "":
+                            logger.debug(
+                                f"[临时会话识别2] 检测到临时会话，sub_type为空, 会话: {event.unified_msg_origin}"
+                            )
+                            await event.send(
+                                event.plain_result(
+                                    "想和染染玩需要成为好朋友，并经过主人的同意嗷~"
+                                )
+                            )
+                            event.stop_event()
+                            return
+            return
