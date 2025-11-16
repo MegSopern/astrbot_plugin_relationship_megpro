@@ -21,7 +21,7 @@ from .utils import convert_duration_advanced, get_at_id, get_reply_text, get_use
     "astrbot_plugin_relationship_megpro",
     "MegSopern & Zhalslar",
     "[仅aiocqhttp] 人际关系管理器增强版！",
-    "v2.0.5",
+    "v2.0.6",
     "https://github.com/MegSopern/astrbot_plugin_relationship_megpro",
 )
 class Relationship(Star):
